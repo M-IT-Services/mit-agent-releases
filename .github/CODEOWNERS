@@ -1,0 +1,4 @@
+# Code owners — every change to release infra requires review by the agent maintainers.
+* @M-IT-Services/agent-maintainers
+/scripts/        @M-IT-Services/agent-maintainers
+/.github/        @M-IT-Services/agent-maintainers

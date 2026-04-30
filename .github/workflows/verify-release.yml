@@ -1,0 +1,72 @@
+name: Verify release assets
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to verify (e.g. v1.0.8)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - name: Resolve release tag
+        id: resolve
+        shell: pwsh
+        run: |
+          $tag = if ('${{ github.event_name }}' -eq 'release') {
+            '${{ github.event.release.tag_name }}'
+          } else {
+            '${{ github.event.inputs.tag }}'
+          }
+          if (-not $tag) { throw 'No tag resolved.' }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts | Out-Null
+          gh release download "${{ steps.resolve.outputs.tag }}" `
+            --repo "${{ github.repository }}" `
+            --dir artifacts `
+            --pattern "MitAgent-*.msi" `
+            --pattern "MitAgent-*.msi.sha256"
+
+      - name: Verify SHA-256 sidecar matches MSI
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem artifacts -Filter 'MitAgent-*.msi' | Select-Object -First 1
+          if (-not $msi) { throw 'MSI asset not found.' }
+          $sidecar = "$($msi.FullName).sha256"
+          if (-not (Test-Path $sidecar)) { throw "Missing sidecar $sidecar" }
+          $expected = (Get-Content $sidecar).Trim().ToLower()
+          if ($expected -notmatch '^[0-9a-f]{64}$') {
+            throw "Sidecar does not contain a valid SHA-256 hex string."
+          }
+          $actual = (Get-FileHash $msi.FullName -Algorithm SHA256).Hash.ToLower()
+          if ($expected -ne $actual) {
+            throw "Checksum mismatch! expected=$expected actual=$actual"
+          }
+          Write-Host "OK — checksum verified for $($msi.Name)"
+
+      - name: Report Authenticode signature (informational)
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem artifacts -Filter 'MitAgent-*.msi' | Select-Object -First 1
+          $sig = Get-AuthenticodeSignature $msi.FullName
+          Write-Host "Signature status: $($sig.Status)"
+          if ($sig.SignerCertificate) {
+            Write-Host "Signer subject : $($sig.SignerCertificate.Subject)"
+            Write-Host "Signer issuer  : $($sig.SignerCertificate.Issuer)"
+            Write-Host "Valid until    : $($sig.SignerCertificate.NotAfter)"
+          } else {
+            Write-Warning "No Authenticode signature present (informational only)."
+          }

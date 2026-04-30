@@ -1,0 +1,21 @@
+# Build artefacts (none committed — releases only)
+*.msi
+*.exe
+*.pdb
+
+# Local secrets (defense-in-depth even though we don't expect any)
+*.pfx
+*.p12
+*.key
+secrets.*
+.env
+.env.*
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
